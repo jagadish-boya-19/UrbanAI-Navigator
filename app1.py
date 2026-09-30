@@ -10,7 +10,7 @@ import datetime
 import json
 
 load_dotenv()
-TOMTOM_KEY = os.getenv("TOMTOM_API_KEY", "JmX9xc6dwCIvEAyAt8fUv9Yg5jJwF0q4")
+TOMTOM_KEY = os.getenv("TOMTOM_API_KEY")
 
 st.set_page_config(
     page_title="UrbanAI Navigator",
