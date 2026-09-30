@@ -1,0 +1,21 @@
+City,Station_Name,Station_ID,Station_Code,Transit_Type
+Bangalore,Hebbal,BLR-B03,2,Bus
+Bangalore,Indiranagar,BLR-M02,4,Metro
+Bangalore,Majestic (KSR),BLR-M01,3,Metro
+Bangalore,Marathahalli,BLR-B02,1,Bus
+Bangalore,Silk Board,BLR-B01,0,Bus
+Chennai,Koyambedu,CHN-M01,5,Bus
+Chennai,T Nagar,CHN-M02,6,Bus
+Delhi,Anand Vihar ISBT,DEL-B01,7,Bus
+Delhi,Hauz Khas,DEL-M02,9,Metro
+Delhi,Kashmere Gate,DEL-M03,10,Metro
+Delhi,Noida Sector 62,DEL-M04,11,Metro
+Delhi,Rajiv Chowk,DEL-M01,8,Metro
+Hyderabad,Ameerpet,HYD-M02,14,Metro
+Hyderabad,Hitech City,HYD-M01,13,Metro
+Hyderabad,Secunderabad,HYD-B01,12,Bus
+Mumbai,Andheri,MUM-M02,18,Metro
+Mumbai,Bandra West,MUM-B01,15,Bus
+Mumbai,Borivali Station,MUM-B02,16,Bus
+Mumbai,Dadar,MUM-M03,19,Metro
+Mumbai,Ghatkopar,MUM-M01,17,Metro
