@@ -299,21 +299,18 @@ for tc in test_cases:
     )
 
     if crowd_pct >= 75:
-        level = "High"
-        emoji = "🔴"
-
+        badge = "[HIGH]"
     elif crowd_pct >= 40:
         level = "Medium"
-        emoji = "🟠"
-
+        badge = "[MED] "
     else:
         level = "Low"
-        emoji = "🟢"
+        badge = "[LOW] "
 
     print(
-        f"  {emoji} "
+        f"  {badge} "
         f"{tc['label']:<45} "
-        f"→ {level} ({crowd_pct}%)"
+        f"-> {level} ({crowd_pct}%)"
     )
 
 print(

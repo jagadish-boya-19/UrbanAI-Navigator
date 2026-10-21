@@ -104,7 +104,24 @@ def validate_api_key() -> tuple[bool, str]:
     return True, "OK"
 
 # ================================================================
-# TOMTOM FUNCTIONS — No fallback, errors shown clearly
+# TRANSPORT MODE CONFIG
+# ================================================================
+# TomTom supports: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian
+# We map user-facing modes to TomTom travelMode values.
+# Bus is not a distinct routing profile in TomTom — it shares "car" road network.
+TRANSPORT_MODES = {
+    "🚗 Car":         {"tomtom": "car",         "supported": True,  "note": "Full live-traffic routing"},
+    "🏍️ Two-Wheeler": {"tomtom": "motorcycle",  "supported": True,  "note": "Motorcycle routing profile"},
+    "🚶 Walking":     {"tomtom": "pedestrian",  "supported": True,  "note": "Pedestrian paths, no traffic data"},
+    "🚲 Bicycle":     {"tomtom": "bicycle",     "supported": True,  "note": "Cycling paths"},
+    "🚌 Bus":         {"tomtom": "car",         "supported": True,  "note": "Uses road network (no dedicated bus routing in TomTom)"},
+}
+
+# Modes where TomTom does NOT return traffic delay data
+NO_TRAFFIC_MODES = {"pedestrian", "bicycle"}
+
+# ================================================================
+# TOMTOM FUNCTIONS
 # ================================================================
 MANUAL_COORDS = {
     # Bangalore
@@ -204,9 +221,10 @@ def get_coordinates(place: str, city: str) -> tuple:
         raise ValueError(f"Geocoding error: {e}")
 
 
-def get_route(src: tuple, dst: tuple) -> dict:
+def get_route(src: tuple, dst: tuple, travel_mode: str = "car") -> dict:
     """
     Returns route data from TomTom with live traffic.
+    Accepts a TomTom travelMode string (car, motorcycle, pedestrian, bicycle).
     Raises with a clear message on any failure.
     No straight-line or fake fallback.
     """
@@ -214,16 +232,24 @@ def get_route(src: tuple, dst: tuple) -> dict:
     if not valid:
         raise ValueError(f"API key issue: {err}")
 
+    # Traffic data is only meaningful for motorised modes
+    use_traffic = travel_mode not in NO_TRAFFIC_MODES
+
     try:
         url = (f"https://api.tomtom.com/routing/1/calculateRoute/"
                f"{src[0]},{src[1]}:{dst[0]},{dst[1]}/json")
-        r   = requests.get(url, params={
+        params = {
             "key":           TOMTOM_KEY,
-            "traffic":       "true",
-            "travelMode":    "car",
+            "traffic":       "true" if use_traffic else "false",
+            "travelMode":    travel_mode,
             "routeType":     "fastest",
             "computeTravelTimeFor": "all",
-        }, timeout=12)
+        }
+        # Request traffic section details for segment colouring
+        if use_traffic:
+            params["sectionType"] = "traffic"
+
+        r = requests.get(url, params=params, timeout=12)
 
         if r.status_code == 401:
             raise ValueError("TomTom API key is invalid or expired")
@@ -249,51 +275,211 @@ def get_route(src: tuple, dst: tuple) -> dict:
         raise ValueError(f"Routing error: {e}")
 
 
-def parse_route(route_data: dict) -> dict:
+# ================================================================
+# TRAFFIC SEGMENT HELPERS
+# ================================================================
+def _colour_from_ratio(ratio: float) -> tuple[str, str]:
+    """
+    Convert free/live speed ratio to a (folium_colour, label) pair.
+    Only called when we have real TomTom traffic data.
+    """
+    if ratio >= 0.85:
+        return "green",  "Low Traffic"
+    elif ratio >= 0.60:
+        return "orange", "Moderate Traffic"
+    else:
+        return "red",    "Heavy Traffic"
+
+
+def _build_segments_from_sections(coords: list, sections: list,
+                                   live_secs: int, free_secs: int) -> list[dict]:
+    """
+    Build coloured segments from TomTom traffic sections.
+
+    TomTom returns sections with startPointIndex / endPointIndex into the
+    points array, and a 'simpleCategory' field ('JAM', 'SLOW', 'NORMAL', etc.).
+    Each returned dict has: coords, color, label, is_live.
+
+    If sections are absent or malformed we fall back to a single overall colour
+    derived from the live/free-flow ratio, clearly labelled as estimated.
+    """
+    n = len(coords)
+
+    # ── Fast path: no section data → single overall colour ──────────────────
+    traffic_sections = [s for s in sections if s.get("sectionType") == "TRAFFIC"]
+
+    if not traffic_sections:
+        # Fall back to overall ratio-based colour
+        if free_secs > 0 and live_secs > 0:
+            ratio = free_secs / live_secs
+            colour, label = _colour_from_ratio(ratio)
+            is_live = True
+            data_note = "TomTom Live (overall ratio — per-segment data unavailable)"
+        else:
+            colour, label = "#2E86AB", "No Traffic Data"
+            is_live = False
+            data_note = "TomTom Routing (no traffic data)"
+        return [{
+            "coords":    coords,
+            "color":     colour,
+            "label":     label,
+            "is_live":   is_live,
+            "data_note": data_note,
+        }]
+
+    # ── Build per-section segments ───────────────────────────────────────────
+    # Map simpleCategory → (colour, label)
+    CATEGORY_MAP = {
+        "JAM":    ("red",    "Heavy Traffic"),
+        "SLOW":   ("orange", "Moderate Traffic"),
+        "NORMAL": ("green",  "Low Traffic"),
+    }
+
+    # Sort by startPointIndex
+    traffic_sections.sort(key=lambda s: s.get("startPointIndex", 0))
+
+    segments = []
+    covered_up_to = 0   # last point index consumed
+
+    for sec in traffic_sections:
+        start_idx = sec.get("startPointIndex", 0)
+        end_idx   = min(n - 1, sec.get("endPointIndex", n - 1))
+
+        # Gap before this section → green (free-flowing)
+        if start_idx > covered_up_to:
+            gap_coords = coords[covered_up_to : start_idx + 1]
+            if len(gap_coords) >= 2:
+                segments.append({
+                    "coords":    gap_coords,
+                    "color":     "green",
+                    "label":     "Low Traffic",
+                    "is_live":   True,
+                    "data_note": "TomTom Live Traffic",
+                })
+
+        cat = sec.get("simpleCategory", "").upper()
+        colour, label = CATEGORY_MAP.get(cat, ("orange", "Moderate Traffic"))
+
+        seg_coords = coords[start_idx : end_idx + 1]
+        if len(seg_coords) >= 2:
+            segments.append({
+                "coords":    seg_coords,
+                "color":     colour,
+                "label":     label,
+                "is_live":   True,
+                "data_note": "TomTom Live Traffic",
+            })
+        covered_up_to = end_idx
+
+    # Trailing gap → green
+    if covered_up_to < n - 1:
+        tail_coords = coords[covered_up_to:]
+        if len(tail_coords) >= 2:
+            segments.append({
+                "coords":    tail_coords,
+                "color":     "green",
+                "label":     "Low Traffic",
+                "is_live":   True,
+                "data_note": "TomTom Live Traffic",
+            })
+
+    return segments if segments else [{
+        "coords":    coords,
+        "color":     "green",
+        "label":     "Low Traffic",
+        "is_live":   True,
+        "data_note": "TomTom Live Traffic",
+    }]
+
+
+def parse_route(route_data: dict, travel_mode: str = "car") -> dict:
     """
     Parse TomTom route response into clean values.
     Returns dict with data source clearly labelled.
+    Builds multi-segment traffic colouring when section data is available.
     Never fabricates traffic delay values.
     """
     route   = route_data["routes"][0]
     summary = route["summary"]
     points  = route["legs"][0]["points"]
     coords  = [(p["latitude"], p["longitude"]) for p in points]
+    sections = route.get("sections", [])
 
     live_secs = summary.get("travelTimeInSeconds",          0)
     free_secs = summary.get("noTrafficTravelTimeInSeconds", 0)
     dist_m    = summary.get("lengthInMeters",               0)
 
     # Delay is ONLY computed when TomTom provides both values
-    if free_secs > 0 and live_secs > 0:
-        delay_secs   = max(0, live_secs - free_secs)
+    if free_secs > 0 and live_secs > 0 and travel_mode not in NO_TRAFFIC_MODES:
+        delay_secs       = max(0, live_secs - free_secs)
         has_live_traffic = True
     else:
-        delay_secs   = 0
+        delay_secs       = 0
         has_live_traffic = False
 
-    # Traffic color from real speed ratio
+    # ── Overall single colour (for metrics, badge, legend summary) ──────────
     if has_live_traffic and free_secs > 0:
         ratio = free_secs / live_secs
-        if ratio >= 0.85:
-            route_color = "green";  traffic_label = "Low Traffic"
-        elif ratio >= 0.60:
-            route_color = "orange"; traffic_label = "Moderate Traffic"
-        else:
-            route_color = "red";    traffic_label = "Heavy Traffic"
+        route_color, traffic_label = _colour_from_ratio(ratio)
+    elif travel_mode in NO_TRAFFIC_MODES:
+        route_color   = "#2E86AB"
+        traffic_label = "N/A (no traffic for this mode)"
     else:
         route_color   = "#2E86AB"
         traffic_label = "No Traffic Data"
 
+    # ── Multi-segment traffic colouring ─────────────────────────────────────
+    if has_live_traffic:
+        segments = _build_segments_from_sections(coords, sections, live_secs, free_secs)
+    elif travel_mode in NO_TRAFFIC_MODES:
+        # Walking / cycling — draw the whole route in a neutral colour,
+        # clearly labelled as no traffic data available for this mode
+        segments = [{
+            "coords":    coords,
+            "color":     "#2E86AB",
+            "label":     "No traffic data (mode: " + travel_mode + ")",
+            "is_live":   False,
+            "data_note": "TomTom Routing — no traffic for pedestrian/cycling modes",
+        }]
+    else:
+        segments = [{
+            "coords":    coords,
+            "color":     "#2E86AB",
+            "label":     "No Traffic Data",
+            "is_live":   False,
+            "data_note": "TomTom Routing (no traffic data)",
+        }]
+
+    # ── Segment colour summary percentages ──────────────────────────────────
+    seg_counts = {"green": 0, "orange": 0, "red": 0, "other": 0}
+    for seg in segments:
+        c = seg["color"]
+        if c == "green":
+            seg_counts["green"] += len(seg["coords"])
+        elif c == "orange":
+            seg_counts["orange"] += len(seg["coords"])
+        elif c == "red":
+            seg_counts["red"] += len(seg["coords"])
+        else:
+            seg_counts["other"] += len(seg["coords"])
+
+    total_pts = max(1, sum(seg_counts.values()))
+    seg_pct = {k: round(v / total_pts * 100) for k, v in seg_counts.items()}
+
+    data_source = "TomTom Live Traffic" if has_live_traffic else (
+        "TomTom Routing (no traffic data)")
+
     return {
         "coords":           coords,
+        "segments":         segments,
         "distance_km":      round(dist_m / 1000, 1),
         "travel_min":       round(live_secs / 60),
         "delay_min":        round(delay_secs / 60),
         "route_color":      route_color,
         "traffic_label":    traffic_label,
         "has_live_traffic": has_live_traffic,
-        "data_source":      "TomTom Live Traffic" if has_live_traffic else "TomTom Routing (no traffic data)",
+        "data_source":      data_source,
+        "seg_pct":          seg_pct,
     }
 
 # ================================================================
@@ -503,6 +689,17 @@ st.markdown("""
         padding: 6px 10px; border-radius: 6px;
         font-size: 12px; color: #7D6608;
     }
+    .traffic-legend {
+        background: white; padding: 10px 14px; border-radius: 10px;
+        border-left: 4px solid #1F4E79;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+        font-size: 12px; margin: 6px 0;
+    }
+    .mode-note {
+        background: #EBF5FB; border-left: 3px solid #2E86AB;
+        padding: 6px 10px; border-radius: 6px;
+        font-size: 11px; color: #1A5276; margin-top: 4px;
+    }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display: none;}
@@ -539,30 +736,45 @@ def build_default_map(city_info: dict) -> folium.Map:
     )
 
 
-def build_route_map(src_coord, dst_coord, route_coords,
+def build_route_map(src_coord, dst_coord, segments: list,
                     route_color, source_name, dest_name,
                     traffic_label, has_live) -> folium.Map:
     """
-    Real road route map.
-    Clearly shows whether traffic data is live or unavailable.
+    Route map with multi-segment traffic colouring.
+    Each segment dict has: coords, color, label, is_live, data_note.
+    Preserves all existing markers and badge behaviour.
     """
-    center = [(src_coord[0]+dst_coord[0])/2,
-              (src_coord[1]+dst_coord[1])/2]
+    # Collect all coords for fitting bounds
+    all_coords = []
+    for seg in segments:
+        all_coords.extend(seg["coords"])
+
+    center = [(src_coord[0] + dst_coord[0]) / 2,
+              (src_coord[1] + dst_coord[1]) / 2]
 
     m = folium.Map(location=center, zoom_start=13,
                    tiles="OpenStreetMap")
 
-    # White outline for depth
-    folium.PolyLine(route_coords, color="white",
-                    weight=12, opacity=0.6).add_to(m)
+    # ── Draw each segment with white casing + coloured line ─────────────────
+    for seg in segments:
+        seg_coords = seg["coords"]
+        seg_color  = seg["color"]
+        seg_label  = seg["label"]
 
-    # Colored route
-    folium.PolyLine(route_coords, color=route_color,
-                    weight=7, opacity=0.95,
-                    tooltip=f"{source_name} → {dest_name} | {traffic_label}"
-                    ).add_to(m)
+        # White outline for depth (drawn first, underneath)
+        folium.PolyLine(
+            seg_coords, color="white",
+            weight=12, opacity=0.5
+        ).add_to(m)
 
-    # Start marker
+        # Coloured segment
+        folium.PolyLine(
+            seg_coords, color=seg_color,
+            weight=7, opacity=0.95,
+            tooltip=f"{source_name} → {dest_name} | {seg_label}"
+        ).add_to(m)
+
+    # ── Start marker (unchanged) ─────────────────────────────────────────────
     folium.Marker(
         src_coord,
         tooltip=f"Start: {source_name}",
@@ -570,7 +782,7 @@ def build_route_map(src_coord, dst_coord, route_coords,
         icon=folium.Icon(color="green", icon="circle", prefix="glyphicon")
     ).add_to(m)
 
-    # End marker
+    # ── End marker (unchanged) ───────────────────────────────────────────────
     folium.Marker(
         dst_coord,
         tooltip=f"End: {dest_name}",
@@ -578,11 +790,11 @@ def build_route_map(src_coord, dst_coord, route_coords,
         icon=folium.Icon(color="red", icon="map-marker", prefix="glyphicon")
     ).add_to(m)
 
-    # Traffic label badge — shows REAL source
-    mid   = route_coords[len(route_coords) // 2]
-    badge = (f"🔴 {traffic_label}" if route_color=="red"
-             else f"🟠 {traffic_label}" if route_color=="orange"
-             else f"🟢 {traffic_label}" if route_color=="green"
+    # ── Mid-route traffic badge (unchanged logic) ────────────────────────────
+    mid   = all_coords[len(all_coords) // 2]
+    badge = (f"🔴 {traffic_label}" if route_color == "red"
+             else f"🟠 {traffic_label}" if route_color == "orange"
+             else f"🟢 {traffic_label}" if route_color == "green"
              else f"ℹ️ {traffic_label}")
 
     folium.Marker(
@@ -597,12 +809,12 @@ def build_route_map(src_coord, dst_coord, route_coords,
         )
     ).add_to(m)
 
-    # Fit map to route
-    lats = [c[0] for c in route_coords]
-    lons = [c[1] for c in route_coords]
+    # ── Fit map to entire route ──────────────────────────────────────────────
+    lats = [c[0] for c in all_coords]
+    lons = [c[1] for c in all_coords]
     m.fit_bounds([
-        [min(lats)-0.01, min(lons)-0.01],
-        [max(lats)+0.01, max(lons)+0.01]
+        [min(lats) - 0.01, min(lons) - 0.01],
+        [max(lats) + 0.01, max(lons) + 0.01]
     ])
     return m
 
@@ -647,16 +859,33 @@ with st.sidebar:
                                  placeholder="e.g. MG Road")
     destination = st.text_input("Destination", default_dst,
                                  placeholder="e.g. Silk Board")
+
+    # ── NEW: Transport Mode Selector ─────────────────────────────────────────
+    st.markdown("**Mode of Transport**")
+    transport_label = st.selectbox(
+        "Transport Mode",
+        list(TRANSPORT_MODES.keys()),
+        label_visibility="collapsed",
+    )
+    mode_cfg   = TRANSPORT_MODES[transport_label]
+    tomtom_mode = mode_cfg["tomtom"]
+
+    # Show a note about the selected mode's routing support
+    st.markdown(
+        f'<div class="mode-note">ℹ️ {mode_cfg["note"]}</div>',
+        unsafe_allow_html=True
+    )
+
     get_route_btn = st.button("Get Route", type="primary",
                                use_container_width=True)
 
     if st.session_state.get("route_active"):
         if st.button("Clear Route", use_container_width=True):
-            for k in ["route_active","distance","travel_time",
-                      "traffic_level","delay","src_coord","dst_coord",
-                      "route_coords","route_color","source_name",
-                      "dest_name","data_source","has_live_traffic",
-                      "traffic_label"]:
+            for k in ["route_active", "distance", "travel_time",
+                      "traffic_level", "delay", "src_coord", "dst_coord",
+                      "route_coords", "segments", "route_color", "source_name",
+                      "dest_name", "data_source", "has_live_traffic",
+                      "traffic_label", "transport_label", "seg_pct"]:
                 st.session_state.pop(k, None)
             st.rerun()
 
@@ -667,6 +896,18 @@ with st.sidebar:
         st.success("TomTom API: Connected")
     else:
         st.error(f"TomTom API: {key_msg}")
+
+    # ── NEW: Traffic Legend in sidebar ───────────────────────────────────────
+    st.markdown("---")
+    st.markdown("**Traffic Colour Legend**")
+    st.markdown("""
+    <div class="traffic-legend">
+        🟢 <b>Green</b> — Low / Free-flowing traffic<br>
+        🟠 <b>Orange</b> — Moderate / Slow-moving traffic<br>
+        🔴 <b>Red</b> — Heavy / Congested traffic<br>
+        🔵 <b>Blue</b> — No traffic data available
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ================================================================
@@ -694,7 +935,7 @@ if get_route_btn:
         if not key_ok:
             st.error(f"Cannot get route: {key_msg}")
         else:
-            src_coord = dst_coord = None
+            src_coord  = dst_coord = None
             route_data = None
             error_occurred = False
 
@@ -715,36 +956,44 @@ if get_route_btn:
                         st.error(f"Destination location error: {e}")
                         error_occurred = True
 
-            # Step 3: Get route
+            # Step 3: Get route (now passes travel mode)
             if not error_occurred:
-                with st.spinner("Calculating route with live traffic..."):
+                with st.spinner(
+                    f"Calculating {transport_label} route with live traffic..."
+                ):
                     try:
-                        route_data = get_route(src_coord[:2], dst_coord[:2])
+                        route_data = get_route(
+                            src_coord[:2], dst_coord[:2],
+                            travel_mode=tomtom_mode
+                        )
                     except ValueError as e:
                         st.error(f"Routing error: {e}")
                         error_occurred = True
 
             # Step 4: Parse and display
             if not error_occurred and route_data:
-                parsed = parse_route(route_data)
+                parsed = parse_route(route_data, travel_mode=tomtom_mode)
 
-                # Save to session
+                # Save to session (add segments + transport_label + seg_pct)
                 st.session_state.update({
                     "route_active":     True,
                     "src_coord":        src_coord[:2],
                     "dst_coord":        dst_coord[:2],
                     "route_coords":     parsed["coords"],
+                    "segments":         parsed["segments"],
                     "route_color":      parsed["route_color"],
                     "traffic_label":    parsed["traffic_label"],
                     "has_live_traffic": parsed["has_live_traffic"],
                     "data_source":      parsed["data_source"],
                     "source_name":      source,
                     "dest_name":        destination,
+                    "transport_label":  transport_label,
                     "distance":         f"{parsed['distance_km']} km",
                     "travel_time":      f"{parsed['travel_min']} min",
                     "traffic_level":    parsed["traffic_label"].split()[0],
                     "delay":            (f"+{parsed['delay_min']} min delay"
                                          if parsed["delay_min"] > 0 else "No delay"),
+                    "seg_pct":          parsed["seg_pct"],
                 })
 
                 st.rerun()
@@ -771,10 +1020,23 @@ if get_route_btn:
 # MAP
 # ================================================================
 if st.session_state.get("route_active"):
+    # Use saved segments (multi-segment colouring)
+    segments = st.session_state.get("segments")
+
+    # Backward compat: if session has old-style route_coords but no segments
+    if not segments and st.session_state.get("route_coords"):
+        segments = [{
+            "coords":    st.session_state["route_coords"],
+            "color":     st.session_state.get("route_color", "#2E86AB"),
+            "label":     st.session_state.get("traffic_label", ""),
+            "is_live":   st.session_state.get("has_live_traffic", False),
+            "data_note": st.session_state.get("data_source", ""),
+        }]
+
     city_map = build_route_map(
         st.session_state["src_coord"],
         st.session_state["dst_coord"],
-        st.session_state["route_coords"],
+        segments,
         st.session_state["route_color"],
         st.session_state["source_name"],
         st.session_state["dest_name"],
@@ -786,9 +1048,13 @@ else:
 
 st_folium(city_map, width=1100, height=560, returned_objects=[])
 
-# Route details below map
+# ================================================================
+# ROUTE DETAILS BELOW MAP
+# ================================================================
 if st.session_state.get("route_active"):
     st.markdown("---")
+
+    # ── Row 1: From / To / Mode / Delay ─────────────────────────────────────
     col1, col2, col3, col4 = st.columns(4)
     col1.markdown(
         f'<div class="info-box"><b>From</b><br>{st.session_state.get("source_name","")}</div>',
@@ -797,11 +1063,49 @@ if st.session_state.get("route_active"):
         f'<div class="info-box"><b>To</b><br>{st.session_state.get("dest_name","")}</div>',
         unsafe_allow_html=True)
     col3.markdown(
-        f'<div class="info-box"><b>Delay</b><br>{st.session_state.get("delay","--")}</div>',
+        f'<div class="info-box"><b>Mode</b><br>{st.session_state.get("transport_label","--")}</div>',
         unsafe_allow_html=True)
     col4.markdown(
+        f'<div class="info-box"><b>Delay</b><br>{st.session_state.get("delay","--")}</div>',
+        unsafe_allow_html=True)
+
+    # ── Row 2: Traffic condition + data source ───────────────────────────────
+    col5, col6 = st.columns([2, 2])
+
+    traffic_label_val = st.session_state.get("traffic_label", "--")
+    data_source_val   = st.session_state.get("data_source",   "--")
+    has_live          = st.session_state.get("has_live_traffic", False)
+    seg_pct           = st.session_state.get("seg_pct", {})
+
+    # Traffic type label: honest about live vs. no-data
+    if has_live:
+        traffic_type = "Live (TomTom)"
+    elif tomtom_mode in NO_TRAFFIC_MODES:
+        traffic_type = "N/A — no traffic data for this mode"
+    else:
+        traffic_type = "Not available"
+
+    col5.markdown(
+        f'<div class="info-box"><b>Traffic Condition</b><br>'
+        f'{traffic_label_val}<br>'
+        f'<small style="color:#666">Status: {traffic_type}</small></div>',
+        unsafe_allow_html=True)
+
+    # Segment colour breakdown (only meaningful when we have data)
+    if seg_pct and has_live:
+        breakdown = (
+            f'🟢 {seg_pct.get("green", 0)}% clear &nbsp;|&nbsp;'
+            f'🟠 {seg_pct.get("orange", 0)}% moderate &nbsp;|&nbsp;'
+            f'🔴 {seg_pct.get("red", 0)}% congested'
+        )
+    else:
+        breakdown = "Segment breakdown unavailable"
+
+    source_css = "source-live" if has_live else "source-cached"
+    col6.markdown(
         f'<div class="info-box"><b>Data Source</b><br>'
-        f'{st.session_state.get("data_source","--")}</div>',
+        f'{data_source_val}<br>'
+        f'<small style="color:#666">{breakdown}</small></div>',
         unsafe_allow_html=True)
 
 st.markdown("---")

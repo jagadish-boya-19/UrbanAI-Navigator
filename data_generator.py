@@ -4,37 +4,49 @@ import datetime
 
 np.random.seed(42)
 
-# 15 Indian transit stations across 5 cities
+# 30 Indian transit stations across 6 cities (5 hubs per city)
 stations = [
     # Delhi
-    {"id": "DEL-M01", "name": "Rajiv Chowk",      "city": "Delhi",     "type": "Metro"},
-    {"id": "DEL-M02", "name": "Hauz Khas",         "city": "Delhi",     "type": "Metro"},
-    {"id": "DEL-M03", "name": "Kashmere Gate",     "city": "Delhi",     "type": "Metro"},
-    {"id": "DEL-M04", "name": "Noida Sector 62",   "city": "Delhi",     "type": "Metro"},
-    {"id": "DEL-B01", "name": "Anand Vihar ISBT",  "city": "Delhi",     "type": "Bus"},
+    {"id": "DEL-M01", "name": "Rajiv Chowk",       "city": "Delhi",     "type": "Metro"},
+    {"id": "DEL-M02", "name": "Hauz Khas",          "city": "Delhi",     "type": "Metro"},
+    {"id": "DEL-M03", "name": "Kashmere Gate",      "city": "Delhi",     "type": "Metro"},
+    {"id": "DEL-M04", "name": "IGI Airport",        "city": "Delhi",     "type": "Metro"},
+    {"id": "DEL-B01", "name": "Anand Vihar ISBT",   "city": "Delhi",     "type": "Bus"},
 
     # Bangalore
-    {"id": "BLR-M01", "name": "Majestic (KSR)",    "city": "Bangalore", "type": "Metro"},
-    {"id": "BLR-M02", "name": "Indiranagar",       "city": "Bangalore", "type": "Metro"},
-    {"id": "BLR-B01", "name": "Silk Board",        "city": "Bangalore", "type": "Bus"},
-    {"id": "BLR-B02", "name": "Marathahalli",      "city": "Bangalore", "type": "Bus"},
-    {"id": "BLR-B03", "name": "Hebbal",            "city": "Bangalore", "type": "Bus"},
+    {"id": "BLR-M01", "name": "Majestic (KSR)",     "city": "Bangalore", "type": "Metro"},
+    {"id": "BLR-M02", "name": "Indiranagar",        "city": "Bangalore", "type": "Metro"},
+    {"id": "BLR-M03", "name": "Whitefield",         "city": "Bangalore", "type": "Metro"},
+    {"id": "BLR-B01", "name": "Silk Board",         "city": "Bangalore", "type": "Bus"},
+    {"id": "BLR-B02", "name": "Hebbal",             "city": "Bangalore", "type": "Bus"},
 
     # Mumbai
-    {"id": "MUM-M01", "name": "Ghatkopar",         "city": "Mumbai",    "type": "Metro"},
-    {"id": "MUM-M02", "name": "Andheri",           "city": "Mumbai",    "type": "Metro"},
-    {"id": "MUM-M03", "name": "Dadar",             "city": "Mumbai",    "type": "Metro"},
-    {"id": "MUM-B01", "name": "Bandra West",       "city": "Mumbai",    "type": "Bus"},
-    {"id": "MUM-B02", "name": "Borivali Station",  "city": "Mumbai",    "type": "Bus"},
+    {"id": "MUM-M01", "name": "Ghatkopar",          "city": "Mumbai",    "type": "Metro"},
+    {"id": "MUM-M02", "name": "Andheri",            "city": "Mumbai",    "type": "Metro"},
+    {"id": "MUM-M03", "name": "Dadar",              "city": "Mumbai",    "type": "Metro"},
+    {"id": "MUM-M04", "name": "BKC",                "city": "Mumbai",    "type": "Metro"},
+    {"id": "MUM-B01", "name": "Borivali Station",   "city": "Mumbai",    "type": "Bus"},
 
     # Hyderabad
-    {"id": "HYD-M01", "name": "Hitech City",       "city": "Hyderabad", "type": "Metro"},
-    {"id": "HYD-M02", "name": "Ameerpet",          "city": "Hyderabad", "type": "Metro"},
-    {"id": "HYD-B01", "name": "Secunderabad",      "city": "Hyderabad", "type": "Bus"},
+    {"id": "HYD-M01", "name": "Hitech City",        "city": "Hyderabad", "type": "Metro"},
+    {"id": "HYD-M02", "name": "Ameerpet",           "city": "Hyderabad", "type": "Metro"},
+    {"id": "HYD-M03", "name": "Miyapur",            "city": "Hyderabad", "type": "Metro"},
+    {"id": "HYD-M04", "name": "Dilsukhnagar",       "city": "Hyderabad", "type": "Metro"},
+    {"id": "HYD-B01", "name": "Secunderabad",       "city": "Hyderabad", "type": "Bus"},
 
     # Chennai
-    {"id": "CHN-M01", "name": "Koyambedu",         "city": "Chennai",   "type": "Bus"},
-    {"id": "CHN-M02", "name": "T Nagar",           "city": "Chennai",   "type": "Bus"},
+    {"id": "CHN-M01", "name": "Chennai Central",    "city": "Chennai",   "type": "Metro"},
+    {"id": "CHN-M02", "name": "Guindy",             "city": "Chennai",   "type": "Metro"},
+    {"id": "CHN-M03", "name": "Airport",            "city": "Chennai",   "type": "Metro"},
+    {"id": "CHN-B01", "name": "Koyambedu",          "city": "Chennai",   "type": "Bus"},
+    {"id": "CHN-B02", "name": "T Nagar",            "city": "Chennai",   "type": "Bus"},
+
+    # Pune
+    {"id": "PUN-M01", "name": "Swargate",           "city": "Pune",      "type": "Metro"},
+    {"id": "PUN-M02", "name": "Vanaz",              "city": "Pune",      "type": "Metro"},
+    {"id": "PUN-M03", "name": "Civil Court",        "city": "Pune",      "type": "Metro"},
+    {"id": "PUN-B01", "name": "Hinjewadi",          "city": "Pune",      "type": "Bus"},
+    {"id": "PUN-B02", "name": "Pune Station",       "city": "Pune",      "type": "Bus"},
 ]
 
 # Indian national holidays (month, day)

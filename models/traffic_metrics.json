@@ -1,0 +1,40 @@
+{
+  "algorithm": "XGBoost Regressor",
+  "n_estimators": 180,
+  "max_depth": 6,
+  "learning_rate": 0.08,
+  "r2_score": 99.61,
+  "mae": 1.28,
+  "rmse": 1.56,
+  "accuracy": 97.36,
+  "feature_importances": {
+    "Is_Peak_Hour": 0.569,
+    "Road_Capacity_Utilization": 0.3685,
+    "Incident_Reports": 0.0162,
+    "Hour_Of_Day": 0.013,
+    "Day_Of_Week": 0.009,
+    "Hour_Cos": 0.0079,
+    "Weather_Code": 0.0046,
+    "Is_Holiday": 0.004,
+    "Corridor_Code": 0.0025,
+    "Roadwork_Code": 0.0019,
+    "Hour_Sin": 0.0016,
+    "Day_Sin": 0.0006,
+    "City_Code": 0.0003,
+    "Is_Weekend": 0.0003,
+    "Distance_km": 0.0001,
+    "Month": 0.0001,
+    "Day_Cos": 0.0001,
+    "Holiday_Proximity_Code": 0.0001
+  },
+  "train_samples": 25598,
+  "test_samples": 6400,
+  "cities": [
+    "Bangalore",
+    "Chennai",
+    "Delhi",
+    "Hyderabad",
+    "Mumbai",
+    "Pune"
+  ]
+}

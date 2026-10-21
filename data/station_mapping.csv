@@ -1,21 +1,31 @@
 City,Station_Name,Station_ID,Station_Code,Transit_Type
-Bangalore,Hebbal,BLR-B03,2,Bus
-Bangalore,Indiranagar,BLR-M02,4,Metro
-Bangalore,Majestic (KSR),BLR-M01,3,Metro
-Bangalore,Marathahalli,BLR-B02,1,Bus
+Bangalore,Hebbal,BLR-B02,1,Bus
+Bangalore,Indiranagar,BLR-M02,3,Metro
+Bangalore,Majestic (KSR),BLR-M01,2,Metro
 Bangalore,Silk Board,BLR-B01,0,Bus
-Chennai,Koyambedu,CHN-M01,5,Bus
-Chennai,T Nagar,CHN-M02,6,Bus
-Delhi,Anand Vihar ISBT,DEL-B01,7,Bus
-Delhi,Hauz Khas,DEL-M02,9,Metro
-Delhi,Kashmere Gate,DEL-M03,10,Metro
-Delhi,Noida Sector 62,DEL-M04,11,Metro
-Delhi,Rajiv Chowk,DEL-M01,8,Metro
-Hyderabad,Ameerpet,HYD-M02,14,Metro
-Hyderabad,Hitech City,HYD-M01,13,Metro
-Hyderabad,Secunderabad,HYD-B01,12,Bus
-Mumbai,Andheri,MUM-M02,18,Metro
-Mumbai,Bandra West,MUM-B01,15,Bus
-Mumbai,Borivali Station,MUM-B02,16,Bus
-Mumbai,Dadar,MUM-M03,19,Metro
-Mumbai,Ghatkopar,MUM-M01,17,Metro
+Bangalore,Whitefield,BLR-M03,4,Metro
+Chennai,Airport,CHN-M03,9,Metro
+Chennai,Chennai Central,CHN-M01,7,Metro
+Chennai,Guindy,CHN-M02,8,Metro
+Chennai,Koyambedu,CHN-B01,5,Bus
+Chennai,T Nagar,CHN-B02,6,Bus
+Delhi,Anand Vihar ISBT,DEL-B01,10,Bus
+Delhi,Hauz Khas,DEL-M02,12,Metro
+Delhi,IGI Airport,DEL-M04,14,Metro
+Delhi,Kashmere Gate,DEL-M03,13,Metro
+Delhi,Rajiv Chowk,DEL-M01,11,Metro
+Hyderabad,Ameerpet,HYD-M02,17,Metro
+Hyderabad,Dilsukhnagar,HYD-M04,19,Metro
+Hyderabad,Hitech City,HYD-M01,16,Metro
+Hyderabad,Miyapur,HYD-M03,18,Metro
+Hyderabad,Secunderabad,HYD-B01,15,Bus
+Mumbai,Andheri,MUM-M02,22,Metro
+Mumbai,BKC,MUM-M04,24,Metro
+Mumbai,Borivali Station,MUM-B01,20,Bus
+Mumbai,Dadar,MUM-M03,23,Metro
+Mumbai,Ghatkopar,MUM-M01,21,Metro
+Pune,Civil Court,PUN-M03,29,Metro
+Pune,Hinjewadi,PUN-B01,25,Bus
+Pune,Pune Station,PUN-B02,26,Bus
+Pune,Swargate,PUN-M01,27,Metro
+Pune,Vanaz,PUN-M02,28,Metro
